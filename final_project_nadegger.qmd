@@ -16,7 +16,10 @@ This section loads the required R libraries for data manipulation, spatial analy
 ```{r}
 # load all required libraries and disable s2
 library(tidyverse)
+library(curl)
 library(sf)
+library(dplyr)
+library(readr)
 library(spdep)
 
 # Disable spherical geometry calculations because I experienced some problems with the dataset.
@@ -28,18 +31,23 @@ sf_use_s2(FALSE)
 We load the USGS lunar crater CSV and prepare the data for analysis. Longitude values are adjusted to a -180° to 180° range and each crater is classified as near- or farside, based on longitude.
 
 ```{r}
-# reading the CSV file (api call was not possible)
-craters <- read_csv("lunar_crater_database_robbins_2018.csv", show_col_types = FALSE)
 
-# divide the longitudes to have near- and farside, then categorize the craters
+csv_url <- "https://dwjtvz5c9xobz.cloudfront.net/moon_lro.kaguya_multi_craterdatabase_robbins_2018/data/lunar_crater_database_robbins_2018.csv"
+
+# read the file from url
+con <- curl(csv_url, handle = new_handle(followlocation = TRUE))
+craters <- read_csv(con, show_col_types = FALSE, progress = FALSE)
+
+# wrap longitudes + tag near/farside
 craters <- craters %>%
-  mutate(LON_CIRC_IMG = if_else(LON_CIRC_IMG > 180, LON_CIRC_IMG - 360, LON_CIRC_IMG)) %>%
-  mutate(lunar_side = case_when(
-    LON_CIRC_IMG >= -90 & LON_CIRC_IMG <= 90 ~ "Nearside",
-    TRUE ~ "Farside"))
+  mutate(
+    LON_CIRC_IMG = if_else(LON_CIRC_IMG > 180, LON_CIRC_IMG - 360, LON_CIRC_IMG),
+    lunar_side   = if_else(between(LON_CIRC_IMG, -90, 90), "Nearside", "Farside")
+  )
 
-# create the dataframe as spatial object
-craters_sf <- st_as_sf(craters, coords = c("LON_CIRC_IMG", "LAT_CIRC_IMG"), crs = 4326, remove = FALSE)
+# create sf points
+craters_sf <- st_as_sf(craters, coords = c("LON_CIRC_IMG","LAT_CIRC_IMG"),
+                       crs = 4326, remove = FALSE)
 ```
 
 ## Morphometric analysis
